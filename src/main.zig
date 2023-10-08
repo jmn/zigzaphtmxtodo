@@ -14,7 +14,8 @@ const rand = std.crypto.random;
 fn todoHandler(r: zap.SimpleRequest) void {
     if (r.method) |method| {
         std.debug.print("METHOD: {s}\n", .{method});
-        if (std.mem.eql(u8, method, "DELETE")) {
+
+        if (std.mem.eql(u8, method, "PUT")) {
             var paramOneStr: ?zap.FreeOrNot = null;
             r.parseQuery();
 
@@ -25,14 +26,37 @@ fn todoHandler(r: zap.SimpleRequest) void {
 
             var text = paramOneStr.?.str;
             std.debug.print("ParseInt parsing {s} \n", .{text});
-            const id = std.fmt.parseInt(i32, text, 10) catch |err| {
+            const id = std.fmt.parseInt(u32, text, 10) catch |err| {
                 std.debug.print("ParseInt failed {?} \n", .{err});
                 return;
             };
 
-            std.debug.print("ParseInt is {?} \n", .{id});
             const item_index = for (todos.items, 0..) |todo, index| {
-                std.debug.print("looping over items {?} {?}\n", .{ todo, index });
+                if (todo.id == id) break index;
+            } else null;
+
+            if (item_index) |idx| {
+                var todo = &todos.items[idx];
+                todo.isCompleted = !todo.isCompleted;
+            }
+        }
+
+        if (std.mem.eql(u8, method, "DELETE")) {
+            var paramOneStr: ?zap.FreeOrNot = null;
+            r.parseQuery();
+
+            var maybe_id = r.getParamStr("id", alloc, true) catch unreachable;
+            if (maybe_id) |*s| {
+                paramOneStr = s.*;
+            }
+
+            var text = paramOneStr.?.str;
+            const id = std.fmt.parseInt(u32, text, 10) catch |err| {
+                std.debug.print("ParseInt failed {?} \n", .{err});
+                return;
+            };
+
+            const item_index = for (todos.items, 0..) |todo, index| {
                 if (todo.id == id) break index;
             } else null;
 
@@ -70,7 +94,8 @@ fn todoHandler(r: zap.SimpleRequest) void {
                 std.log.info("ParamStr `{s}` is `{s}`", .{ kv.key.str, kv.value.str });
 
                 if (std.mem.eql(u8, kv.key.str, "name")) {
-                    todos.append(ToDo{ .id = rand.int(u32), .name = kv.value.str, .isCompleted = false }) catch |err| {
+                    var name = std.mem.Allocator.dupe(alloc, u8, kv.value.str) catch unreachable;
+                    todos.append(ToDo{ .id = rand.int(u32), .name = name, .isCompleted = false }) catch |err| {
                         std.log.err("Parse Body error: {any}. Expected if body is empty", .{err});
                     };
                 }
@@ -88,7 +113,8 @@ fn todoHandler(r: zap.SimpleRequest) void {
         \\<h1>Todos</h1>
         \\<ul id="todos">
         \\{{#todos}}
-        \\<li><input type="checkbox" {{#isCompleted}} checked {{/isCompleted}} />{{name}} | <button hx-delete="/todos?id={{id}}" hx-select="#todos" hx-target="#todos" hx-swap="outerHTML" type="button">Delete</button></li>
+        \\<li><input type="checkbox" {{#isCompleted}} checked {{/isCompleted}} hx-put="/todos?id={{id}}" hx-select="#todos" hx-target="#todos" hx-swap="outerHTML"/>
+        \\{{name}} | <button hx-delete="/todos?id={{id}}" hx-select="#todos" hx-target="#todos" hx-swap="outerHTML" type="button">Delete</button></li>
         \\{{/todos}}
         \\</ul>
         \\<form hx-post="/todos" hx-select="#todos" hx-swap="outerHTML" hx-target="#todos" hx-on::after-request="this.reset()">
@@ -164,7 +190,7 @@ pub fn main() !void {
 
     // start worker threads
     zap.start(.{
-        .threads = 2,
-        .workers = 2,
+        .threads = 1,
+        .workers = 1,
     });
 }
